@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from vggt.utils.pose_enc import extri_intri_to_pose_encoding
 from train_utils.general import check_and_fix_inf_nan
 from math import ceil, floor
+from vggt.utils.geometry import get_derived_point_map_torch
 
 
 @dataclass(eq=False)
@@ -673,6 +674,20 @@ def torch_quantile(
         return out.squeeze(dim)
 
     return out
+
+
+def compute_total_loss(preds, targets, lambda_geo=0.1):
+    # 1. Existing VGGT Losses (Supervised)
+    loss_supervised = supervised_criterion(preds['points'], targets['points'])
+    
+    # 2. Your Phase 2: Geometric Consistency Loss
+    # We compare the 'predicted point map' vs 'derived from depth/intrinsics'
+    derived_p = get_derived_point_map_torch(preds['depth'], preds['intrinsics'])
+    
+    loss_geo = torch.nn.functional.mse_loss(preds['points'], derived_p)
+    
+    # 3. Final weighted loss
+    return loss_supervised + (lambda_geo * loss_geo)
 
 
 ########################################################################################

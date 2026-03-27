@@ -322,3 +322,28 @@ def cam_from_img(pred_tracks, intrinsics, extra_params=None):
             )
 
     return tracks_normalized
+import torch
+
+def get_derived_point_map_torch(depth, intrinsics):
+    """
+    This is the 'Geometric Consistency' math.
+    Converts Depth + Intrinsics -> 3D Point Map.
+    """
+    B, _, H, W = depth.shape
+    device = depth.device
+    
+    # 1. Create a coordinate grid for pixels
+    y, x = torch.meshgrid(torch.arange(H, device=device), torch.arange(W, device=device), indexing='ij')
+    pixel_coords = torch.stack([x, y, torch.ones_like(x)], dim=-1).float() # (H, W, 3)
+    pixel_coords = pixel_coords.unsqueeze(0).repeat(B, 1, 1, 1) # (B, H, W, 3)
+
+    # 2. Extract Intrinsics (K) and invert them
+    inv_K = torch.inverse(intrinsics) # (B, 3, 3)
+
+    # 3. Project pixels to 3D rays
+    p = pixel_coords.reshape(B, -1, 3).transpose(1, 2) # (B, 3, N)
+    rays = torch.bmm(inv_K, p) # (B, 3, N)
+
+    # 4. Scale rays by Depth to get 3D points
+    derived_points = rays * depth.reshape(B, 1, -1)
+    return derived_points.reshape(B, 3, H, W)
